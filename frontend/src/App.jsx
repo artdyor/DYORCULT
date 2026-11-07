@@ -18,7 +18,7 @@ function App() {
   const [narratives, setNarratives] = useState({});
   const [loadingNarratives, setLoadingNarratives] = useState({});
 
-  const API_URL = 'http://localhost:3001';
+  const API_URL = 'https://dyorcult-backend.onrender.com';
 
   const fetchWhaleFeed = async () => {
     try {

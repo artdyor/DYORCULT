@@ -10,7 +10,7 @@ function TokenDetail() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  const API_URL = 'http://localhost:3001';
+  const API_URL = 'https://dyorcult-backend.onrender.com';
 
   useEffect(() => {
     fetchTokenDetails();
