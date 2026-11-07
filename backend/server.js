@@ -2,13 +2,88 @@ const express = require('express');
 const cors = require('cors');
 const fetch = require('node-fetch');
 const OpenAI = require('openai');
+const WebSocket = require('ws');
+const http = require('http');
 require('dotenv').config();
 
 const app = express();
+const server = http.createServer(app);
+const wss = new WebSocket.Server({ server });
 const PORT = process.env.PORT || 3001;
 
 app.use(cors());
 app.use(express.json());
+
+// Store connected clients
+const clients = new Set();
+
+// WebSocket connection handler
+wss.on('connection', (ws) => {
+  console.log('New WebSocket client connected');
+  clients.add(ws);
+
+  ws.on('close', () => {
+    console.log('WebSocket client disconnected');
+    clients.delete(ws);
+  });
+
+  ws.on('error', (error) => {
+    console.error('WebSocket error:', error);
+    clients.delete(ws);
+  });
+});
+
+// Broadcast new transactions to all connected clients
+function broadcastTransaction(transaction) {
+  const message = JSON.stringify({ type: 'new_transaction', data: transaction });
+  clients.forEach((client) => {
+    if (client.readyState === WebSocket.OPEN) {
+      client.send(message);
+    }
+  });
+}
+
+// Store last seen transactions to detect new ones
+let lastTransactions = [];
+
+// Poll for new transactions and broadcast them
+async function pollForNewTransactions() {
+  try {
+    const response = await callMobyAPI('tools/call', {
+      name: 'get_whalewatch_feed',
+      arguments: { limit: 30 }
+    });
+
+    const content = response.result?.content?.[0];
+    const data = content?.structuredContent || JSON.parse(content?.text || '{}');
+
+    if (data.transactions && Array.isArray(data.transactions)) {
+      const currentTransactions = data.transactions;
+
+      // Find new transactions (not in lastTransactions)
+      if (lastTransactions.length > 0) {
+        const newTxs = currentTransactions.filter(tx =>
+          !lastTransactions.some(lastTx => lastTx.signature === tx.signature)
+        );
+
+        // Broadcast each new transaction
+        newTxs.forEach(tx => {
+          if (clients.size > 0) {
+            console.log('Broadcasting new transaction:', tx.signature);
+            broadcastTransaction(tx);
+          }
+        });
+      }
+
+      lastTransactions = currentTransactions;
+    }
+  } catch (error) {
+    console.error('Error polling for new transactions:', error);
+  }
+}
+
+// Start polling every 10 seconds
+setInterval(pollForNewTransactions, 10000);
 
 const MOBY_API_URL = 'https://mcp.moby.win/mcp';
 const MOBY_API_KEY = process.env.MOBY_API_KEY;
@@ -883,6 +958,9 @@ app.get('/api/token-details/:address', async (req, res) => {
   }
 });
 
-app.listen(PORT, () => {
+server.listen(PORT, () => {
   console.log(`Moby Whale Tracker backend running on port ${PORT}`);
+  console.log(`WebSocket server ready for real-time updates`);
+  // Start polling for new transactions
+  pollForNewTransactions();
 });

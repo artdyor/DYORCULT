@@ -497,21 +497,140 @@ body::after {
   letter-spacing: 1px;
 }
 
+/* Mobile Responsive Styles */
 @media (max-width: 768px) {
+  .app {
+    padding: var(--spacing-16) var(--spacing-12);
+  }
+
+  .header {
+    margin-bottom: var(--spacing-32);
+    padding: var(--spacing-32) var(--spacing-16);
+  }
+
   .header h1 {
-    font-size: 1.8rem;
+    font-size: 2rem;
+    letter-spacing: -1px;
+  }
+
+  .header p {
+    font-size: 14px;
   }
 
   .controls {
     flex-direction: column;
     align-items: stretch;
+    gap: var(--spacing-12);
   }
 
   .filters {
     flex-direction: column;
+    width: 100%;
+  }
+
+  .filters select,
+  .filters input {
+    width: 100%;
+    padding: var(--spacing-12);
+    font-size: 16px; /* Prevents zoom on iOS */
+  }
+
+  .refresh-controls {
+    flex-direction: column;
+    width: 100%;
+    gap: var(--spacing-12);
+  }
+
+  .refresh-controls button {
+    width: 100%;
+    padding: var(--spacing-16);
+  }
+
+  .feed {
+    padding: var(--spacing-16);
+  }
+
+  .transaction {
+    padding: var(--spacing-16);
+  }
+
+  .tx-header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--spacing-8);
+  }
+
+  .tx-type {
+    width: 100%;
+  }
+
+  .tx-amount {
+    font-size: 1.2rem;
   }
 
   .market-info {
     grid-template-columns: 1fr;
+    gap: var(--spacing-12);
+  }
+
+  .token-address {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .address-text {
+    word-break: break-all;
+  }
+
+  .chart-link,
+  .details-btn {
+    width: 100%;
+    justify-content: center;
+    padding: var(--spacing-12);
+  }
+
+  /* Adjust background effects for mobile */
+  body::before,
+  body::after {
+    opacity: 0.5;
+  }
+}
+
+/* Small mobile devices */
+@media (max-width: 480px) {
+  .app {
+    padding: var(--spacing-12) var(--spacing-8);
+  }
+
+  .header {
+    padding: var(--spacing-24) var(--spacing-12);
+  }
+
+  .header h1 {
+    font-size: 1.5rem;
+  }
+
+  .feed {
+    padding: var(--spacing-12);
+  }
+
+  .transaction {
+    padding: var(--spacing-12);
+    margin-bottom: var(--spacing-12);
+  }
+
+  .badge {
+    font-size: 11px;
+    padding: 4px 10px;
+  }
+}
+
+/* Animations */
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
   }
 }
