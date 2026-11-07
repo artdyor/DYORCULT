@@ -1,0 +1,796 @@
+import { useState, useEffect } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
+import { LineChart, Line, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import './TokenDetail.css';
+
+function TokenDetail() {
+  const { address } = useParams();
+  const navigate = useNavigate();
+  const [tokenData, setTokenData] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [chartTimeframe, setChartTimeframe] = useState('day'); // 'hour' or 'day'
+  const [narrative, setNarrative] = useState(null);
+  const [loadingNarrative, setLoadingNarrative] = useState(false);
+  const [activeSection, setActiveSection] = useState('narrative');
+
+  const API_URL = 'http://localhost:3001';
+
+  useEffect(() => {
+    fetchTokenDetails();
+    fetchNarrative();
+  }, [address]);
+
+  useEffect(() => {
+    if (tokenData?.pool) {
+      console.log('Pool data available:', tokenData.pool);
+    }
+  }, [tokenData]);
+
+  const fetchNarrative = async () => {
+    setLoadingNarrative(true);
+    try {
+      const response = await fetch(`${API_URL}/api/narrative/${address}`);
+      const data = await response.json();
+      if (data.narrative) {
+        setNarrative(data.narrative);
+      }
+    } catch (err) {
+      console.error('Error fetching narrative:', err);
+    } finally {
+      setLoadingNarrative(false);
+    }
+  };
+
+  const fetchTokenDetails = async () => {
+    try {
+      setLoading(true);
+      const response = await fetch(`${API_URL}/api/token-details/${address}`);
+      const data = await response.json();
+
+      if (data.error) {
+        setError(data.error);
+      } else {
+        setTokenData(data);
+        setError(null);
+      }
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const copyToClipboard = (text) => {
+    navigator.clipboard.writeText(text);
+  };
+
+  const formatNumber = (num) => {
+    if (!num) return '0';
+    if (num >= 1000000) return `$${(num / 1000000).toFixed(2)}M`;
+    if (num >= 1000) return `$${(num / 1000).toFixed(2)}K`;
+    return `$${num.toFixed(2)}`;
+  };
+
+  const formatPrice = (price) => {
+    if (!price) return '$0';
+    if (price < 0.00001) return `$${price.toExponential(2)}`;
+    if (price < 1) return `$${price.toFixed(6)}`;
+    return `$${price.toFixed(4)}`;
+  };
+
+  const getChangeColor = (change) => {
+    if (change > 0) return '#10b981';
+    if (change < 0) return '#ef4444';
+    return '#6b7280';
+  };
+
+  const prepareChartData = (ohlcvData) => {
+    if (!ohlcvData || !Array.isArray(ohlcvData)) return [];
+
+    return ohlcvData.map(item => {
+      // OHLCV format: [timestamp, open, high, low, close, volume]
+      const timestamp = new Date(item[0] * 1000);
+      return {
+        time: timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        price: parseFloat(item[4]), // close price
+        open: parseFloat(item[1]),
+        high: parseFloat(item[2]),
+        low: parseFloat(item[3]),
+        volume: parseFloat(item[5])
+      };
+    });
+  };
+
+  const parseNarrativeIntoCards = (text) => {
+    const sections = [];
+    const lines = text.split('\n');
+
+    let currentSection = null;
+    let currentContent = [];
+
+    lines.forEach(line => {
+      if (line.startsWith('**NARRATIVE**')) {
+        if (currentSection) sections.push({ title: currentSection, content: currentContent.join('\n'), icon: getIconForSection(currentSection) });
+        currentSection = 'Overview';
+        currentContent = [];
+      } else if (line.startsWith('**SENTIMENT**')) {
+        if (currentSection) sections.push({ title: currentSection, content: currentContent.join('\n'), icon: getIconForSection(currentSection) });
+        currentSection = 'Market Sentiment';
+        currentContent = [];
+      } else if (line.startsWith('**KEY METRICS**')) {
+        if (currentSection) sections.push({ title: currentSection, content: currentContent.join('\n'), icon: getIconForSection(currentSection) });
+        currentSection = 'Key Metrics';
+        currentContent = [];
+      } else if (line.startsWith('**SOCIAL & COMMUNITY**')) {
+        if (currentSection) sections.push({ title: currentSection, content: currentContent.join('\n'), icon: getIconForSection(currentSection) });
+        currentSection = 'Community';
+        currentContent = [];
+      } else if (line.startsWith('**RISK ASSESSMENT**')) {
+        if (currentSection) sections.push({ title: currentSection, content: currentContent.join('\n'), icon: getIconForSection(currentSection) });
+        currentSection = 'Risk Analysis';
+        currentContent = [];
+      } else if (line.trim() && !line.startsWith('**')) {
+        currentContent.push(line);
+      }
+    });
+
+    if (currentSection) sections.push({ title: currentSection, content: currentContent.join('\n'), icon: getIconForSection(currentSection) });
+
+    return sections.map((section, idx) => (
+      <div key={idx} className="narrative-card">
+        <div className="narrative-card-header">
+          <span className="narrative-icon">{section.icon}</span>
+          <h3>{section.title}</h3>
+        </div>
+        <div className="narrative-card-content">
+          <p>{section.content}</p>
+        </div>
+      </div>
+    ));
+  };
+
+  const getIconForSection = (title) => {
+    const icons = {
+      'Overview': '📖',
+      'Market Sentiment': '💭',
+      'Key Metrics': '📊',
+      'Community': '👥',
+      'Risk Analysis': '⚠️'
+    };
+    return icons[title] || '📌';
+  };
+
+  if (loading) {
+    return (
+      <div className="token-detail">
+        <div className="loading-screen">
+          <div className="loading-spinner"></div>
+          <div>Loading comprehensive token data...</div>
+          <div className="loading-sources">
+            Fetching from Moby, DexScreener, GeckoTerminal, Pump.fun, and GMGN
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="token-detail">
+        <div className="error-screen">
+          <h2>Error Loading Token</h2>
+          <p>{error}</p>
+          <button onClick={() => navigate('/')}>Back to Feed</button>
+        </div>
+      </div>
+    );
+  }
+
+  if (!tokenData) return null;
+
+  const { basic, market, liquidity, trading, holders, smartMoney, pumpfun, social, dex, safety, sources, pool } = tokenData;
+
+  return (
+    <div className="token-detail">
+      <div className="detail-header">
+        <button className="back-button" onClick={() => navigate('/')}>
+          ← Back to Feed
+        </button>
+        <div className="header-actions">
+          <a href={dex.url} target="_blank" rel="noopener noreferrer" className="action-btn">
+            📊 View on DexScreener
+          </a>
+        </div>
+      </div>
+
+      <div className="token-hero">
+        <div className="hero-left">
+          {basic.image && <img src={basic.image} alt={basic.name} className="token-image-large" />}
+          <div className="token-title-section">
+            <h1>{basic.name}</h1>
+            <div className="token-symbol">${basic.symbol}</div>
+            <div className="token-address">
+              {basic.tokenAddress?.substring(0, 8)}...{basic.tokenAddress?.substring(basic.tokenAddress.length - 6)}
+              <button onClick={() => copyToClipboard(basic.tokenAddress)} className="copy-btn">
+                📋
+              </button>
+            </div>
+            <div className="safety-badge ${safety?.isVerified ? 'green' : 'grey'}">
+              {safety?.isVerified ? '✅ Verified' : '⚠️ Unverified'}
+            </div>
+          </div>
+        </div>
+
+        <div className="hero-right">
+          <div className="price-section">
+            <div className="current-price">${formatNumber(market?.price || 0)}</div>
+            <div className="price-changes">
+              <span style={{ color: getChangeColor(market?.priceChange?.h1) }}>
+                1H: {market?.priceChange?.h1?.toFixed(2)}%
+              </span>
+              <span style={{ color: getChangeColor(market?.priceChange?.h24) }}>
+                24H: {market?.priceChange?.h24?.toFixed(2)}%
+              </span>
+            </div>
+          </div>
+
+          <div className="market-stats-grid">
+            <div className="stat-item">
+              <div className="stat-label">Market Cap</div>
+              <div className="stat-value">${formatNumber(market?.marketCap || 0)}</div>
+            </div>
+            <div className="stat-item">
+              <div className="stat-label">24h Volume</div>
+              <div className="stat-value">${formatNumber(trading?.volume24h || 0)}</div>
+            </div>
+            <div className="stat-item">
+              <div className="stat-label">Liquidity</div>
+              <div className="stat-value">${formatNumber(liquidity?.usd || 0)}</div>
+            </div>
+            <div className="stat-item">
+              <div className="stat-label">Holders</div>
+              <div className="stat-value">{formatNumber(holders?.holders || 0)}</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* TradingView Chart */}
+      <div className="detail-card chart-card">
+        <h2>📊 Price Chart</h2>
+        <div className="chart-container">
+          <iframe
+            src={`https://dexscreener.com/${dex.chain}/${basic.tokenAddress}?embed=1&theme=dark&trades=0&info=0`}
+            style={{
+              width: '100%',
+              height: '500px',
+              border: 'none',
+              borderRadius: 'var(--radius-xl)',
+            }}
+            title="Token Chart"
+          />
+        </div>
+      </div>
+
+      <div className="detail-content">
+        <div className="content-left">
+      </div>
+
+      {/* Price Chart - DexScreener Embed (Primary) or GeckoTerminal (Fallback) */}
+      {dex?.pairAddress ? (
+        <div className="chart-section">
+          <div className="chart-header">
+            <h2>📊 Live Chart</h2>
+            <div className="chart-source">
+              <span>Powered by </span>
+              <a href={dex.url} target="_blank" rel="noopener noreferrer">
+                DexScreener
+              </a>
+            </div>
+          </div>
+          <div className="chart-embed-container">
+            <iframe
+              id="dexscreener-embed"
+              title="DexScreener Chart"
+              src={`https://dexscreener.com/solana/${dex.pairAddress}?embed=1&theme=dark&trades=0&info=0`}
+              frameBorder="0"
+              allowFullScreen
+              style={{
+                width: '100%',
+                height: '600px',
+                border: 'none',
+                borderRadius: '8px',
+                display: 'block'
+              }}
+            ></iframe>
+          </div>
+        </div>
+      ) : pool?.address ? (
+        <div className="chart-section">
+          <div className="chart-header">
+            <h2>📊 Live Chart</h2>
+            <div className="chart-source">
+              <span>Powered by </span>
+              <a href={`https://www.geckoterminal.com/solana/pools/${pool.address}`} target="_blank" rel="noopener noreferrer">
+                GeckoTerminal
+              </a>
+            </div>
+          </div>
+          <div className="chart-embed-container">
+            <iframe
+              id="geckoterminal-embed"
+              title="GeckoTerminal Embed"
+              src={`https://www.geckoterminal.com/solana/pools/${pool.address}?embed=1&info=0&swaps=0`}
+              frameBorder="0"
+              allow="clipboard-write"
+              allowFullScreen
+              style={{
+                width: '100%',
+                height: '600px',
+                border: 'none',
+                borderRadius: '8px',
+                display: 'block'
+              }}
+            ></iframe>
+          </div>
+        </div>
+      ) : (
+        <div className="chart-section">
+          <div className="no-chart-message">
+            📊 Chart not available - No pool data found
+          </div>
+        </div>
+      )}
+
+      {/* DYORCULT Info */}
+      <div className="dyorcult-info-section">
+        <div className="dyorcult-header">
+          <h2>🔍 DYORCULT Info</h2>
+        </div>
+        {loadingNarrative ? (
+          <div className="narrative-loading">
+            <div className="loading-spinner"></div>
+            <div>🔍 Analyzing token across all sources...</div>
+            <div style={{ fontSize: '12px', marginTop: '8px', opacity: 0.7 }}>
+              Scanning Pump.fun, DexScreener, GeckoTerminal, GMGN, and whale activity.
+            </div>
+          </div>
+        ) : narrative ? (
+          <div className="narrative-cards-grid">
+            {parseNarrativeIntoCards(narrative)}
+          </div>
+        ) : (
+          <div className="narrative-placeholder">
+            <p>Analysis will load automatically...</p>
+          </div>
+        )}
+      </div>
+
+      <div className="detail-content">
+        <div className="content-left">
+          {/* Trading Activity */}
+          <div className="detail-card">
+            <h2>📈 Trading Activity</h2>
+            <div className="trading-stats">
+              <div className="trading-row">
+                <span>24h Transactions</span>
+                <span className="trading-value">{trading.txns24h.total}</span>
+              </div>
+              <div className="trading-row">
+                <span>Buys</span>
+                <span className="trading-value buy">{trading.txns24h.buys}</span>
+              </div>
+              <div className="trading-row">
+                <span>Sells</span>
+                <span className="trading-value sell">{trading.txns24h.sells}</span>
+              </div>
+              <div className="trading-row">
+                <span>Buy Ratio</span>
+                <span className="trading-value">{trading.buyRatio24h.toFixed(1)}%</span>
+              </div>
+              <div className="buy-sell-bar">
+                <div
+                  className="buy-portion"
+                  style={{ width: `${trading.buyRatio24h}%` }}
+                ></div>
+              </div>
+            </div>
+          </div>
+
+          {/* Smart Money */}
+          {(smartMoney.buyCount > 0 || smartMoney.sellCount > 0) && (
+            <div className="detail-card">
+              <h2>🧠 Smart Money Activity</h2>
+              <div className="smart-money-stats">
+                <div className="sm-row">
+                  <span>Smart Buys</span>
+                  <span className="sm-value buy">{smartMoney.buyCount}</span>
+                </div>
+                <div className="sm-row">
+                  <span>Smart Sells</span>
+                  <span className="sm-value sell">{smartMoney.sellCount}</span>
+                </div>
+                {smartMoney.netFlow !== 0 && (
+                  <div className="sm-row">
+                    <span>Net Flow</span>
+                    <span
+                      className="sm-value"
+                      style={{ color: getChangeColor(smartMoney.netFlow) }}
+                    >
+                      {formatNumber(Math.abs(smartMoney.netFlow))}
+                    </span>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Whale Tracking */}
+          <div className="detail-card">
+            <h2>🐋 Whale Tracking</h2>
+            <div className="whale-stats">
+              <div className="whale-count">
+                <span className="whale-number">{holders.whales}</span>
+                <span className="whale-label">Tracked Whales</span>
+              </div>
+              {holders.whales > 10 && (
+                <div className="whale-signal strong">
+                  🔥 STRONG whale presence
+                </div>
+              )}
+              {holders.whales > 5 && holders.whales <= 10 && (
+                <div className="whale-signal moderate">
+                  ✅ Moderate whale interest
+                </div>
+              )}
+              {holders.whales > 0 && holders.whales <= 5 && (
+                <div className="whale-signal low">
+                  👀 Early whale attention
+                </div>
+              )}
+              {holders.whales === 0 && (
+                <div className="whale-signal none">
+                  ⚠️ No whale tracking yet
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Pump.fun Data */}
+          {pumpfun && (
+            <div className="detail-card">
+              <h2>🚀 Pump.fun Metrics</h2>
+              <div className="pumpfun-stats">
+                <div className="pf-row">
+                  <span>Bonding Curve Progress</span>
+                  <span className="pf-value">{pumpfun.bondingCurveProgress.toFixed(1)}%</span>
+                </div>
+                <div className="progress-bar">
+                  <div
+                    className="progress-fill"
+                    style={{ width: `${pumpfun.bondingCurveProgress}%` }}
+                  ></div>
+                </div>
+                <div className="pf-row">
+                  <span>Community Comments</span>
+                  <span className="pf-value">{pumpfun.replyCount}</span>
+                </div>
+                {basic.creator && (
+                  <div className="pf-row">
+                    <span>Creator</span>
+                    <span className="pf-value mono">
+                      {basic.creator.substring(0, 8)}...
+                      <button onClick={() => copyToClipboard(basic.creator)} className="copy-btn-small">📋</button>
+                    </span>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div className="content-right">
+          {/* Social Links */}
+          <div className="detail-card">
+            <h2>🌐 Social & Links</h2>
+            <div className="social-links">
+              {social.twitter && (
+                <a href={`https://twitter.com/${social.twitter}`} target="_blank" rel="noopener noreferrer" className="social-link">
+                  🐦 Twitter: @{social.twitter}
+                </a>
+              )}
+              {social.telegram && (
+                <a href={social.telegram} target="_blank" rel="noopener noreferrer" className="social-link">
+                  ✈️ Telegram
+                </a>
+              )}
+              {social.website && (
+                <a href={social.website} target="_blank" rel="noopener noreferrer" className="social-link">
+                  🌍 Website
+                </a>
+              )}
+              {social.discord && (
+                <a href={social.discord} target="_blank" rel="noopener noreferrer" className="social-link">
+                  💬 Discord
+                </a>
+              )}
+              {!social.twitter && !social.telegram && !social.website && (
+                <div className="no-socials">No social links available</div>
+              )}
+            </div>
+          </div>
+
+          {/* Token Info */}
+          <div className="detail-card">
+            <h2>ℹ️ Token Information</h2>
+            <div className="token-info">
+              <div className="info-row">
+                <span>Launch Platform</span>
+                <span className="info-value">{safety.launchpad}</span>
+              </div>
+              <div className="info-row">
+                <span>DEX</span>
+                <span className="info-value">{dex.name}</span>
+              </div>
+              {basic.createdAt && (
+                <div className="info-row">
+                  <span>Created</span>
+                  <span className="info-value">{new Date(basic.createdAt * 1000).toLocaleDateString()}</span>
+                </div>
+              )}
+              {basic.deployer && (
+                <div className="info-row">
+                  <span>Deployer</span>
+                  <span className="info-value mono">
+                    {basic.deployer.substring(0, 8)}...
+                    <button onClick={() => copyToClipboard(basic.deployer)} className="copy-btn-small">📋</button>
+                  </span>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Price Momentum Indicators */}
+          <div className="detail-card">
+            <h2>📊 Price Momentum</h2>
+            <div className="momentum-indicators">
+              <div className="momentum-item">
+                <span className="momentum-label">1H Change</span>
+                <span className={`momentum-value ${market?.priceChange?.h1 > 0 ? 'positive' : 'negative'}`}>
+                  {market?.priceChange?.h1 > 0 ? '+' : ''}{market?.priceChange?.h1?.toFixed(2)}%
+                </span>
+              </div>
+              <div className="momentum-item">
+                <span className="momentum-label">24H Change</span>
+                <span className={`momentum-value ${market?.priceChange?.h24 > 0 ? 'positive' : 'negative'}`}>
+                  {market?.priceChange?.h24 > 0 ? '+' : ''}{market?.priceChange?.h24?.toFixed(2)}%
+                </span>
+              </div>
+              <div className="momentum-trend">
+                {Math.abs(market?.priceChange?.h24 || 0) > 50 ? (
+                  <div className="trend-badge explosive">🚀 EXPLOSIVE MOMENTUM</div>
+                ) : Math.abs(market?.priceChange?.h24 || 0) > 20 ? (
+                  <div className="trend-badge strong">💪 STRONG MOVEMENT</div>
+                ) : Math.abs(market?.priceChange?.h24 || 0) > 10 ? (
+                  <div className="trend-badge moderate">📈 MODERATE ACTIVITY</div>
+                ) : (
+                  <div className="trend-badge stable">😴 STABLE</div>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Liquidity Health */}
+          <div className="detail-card">
+            <h2>💧 Liquidity Health</h2>
+            <div className="liquidity-health">
+              <div className="health-metric">
+                <span className="health-label">Available Liquidity</span>
+                <span className="health-value">${formatNumber(liquidity?.usd || safety?.liquidity || 0)}</span>
+              </div>
+              <div className="health-ratio">
+                <span className="health-label">Liquidity / Market Cap</span>
+                <span className="health-value">
+                  {(((liquidity?.usd || safety?.liquidity || 0) / (market?.marketCap || 1)) * 100).toFixed(1)}%
+                </span>
+              </div>
+              <div className="health-status">
+                {(((liquidity?.usd || safety?.liquidity || 0) / (market?.marketCap || 1))) > 0.5 ? (
+                  <div className="status-badge excellent">✅ EXCELLENT - Very liquid</div>
+                ) : (((liquidity?.usd || safety?.liquidity || 0) / (market?.marketCap || 1))) > 0.2 ? (
+                  <div className="status-badge good">👍 GOOD - Healthy liquidity</div>
+                ) : (((liquidity?.usd || safety?.liquidity || 0) / (market?.marketCap || 1))) > 0.05 ? (
+                  <div className="status-badge fair">⚠️ FAIR - Moderate risk</div>
+                ) : (
+                  <div className="status-badge poor">🚨 LOW - High slippage risk</div>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Volume Analysis */}
+          <div className="detail-card">
+            <h2>📈 Volume Analysis</h2>
+            <div className="volume-analysis">
+              <div className="volume-metric">
+                <span className="volume-label">24H Volume</span>
+                <span className="volume-value">${formatNumber(trading?.volume24h || 0)}</span>
+              </div>
+              <div className="volume-metric">
+                <span className="volume-label">Volume / Market Cap</span>
+                <span className="volume-value">
+                  {(((trading?.volume24h || 0) / (market?.marketCap || 1)) * 100).toFixed(1)}%
+                </span>
+              </div>
+              <div className="volume-status">
+                {(((trading?.volume24h || 0) / (market?.marketCap || 1))) > 1.0 ? (
+                  <div className="vol-badge high">🔥 HIGH ACTIVITY - Highly traded</div>
+                ) : (((trading?.volume24h || 0) / (market?.marketCap || 1))) > 0.5 ? (
+                  <div className="vol-badge active">✅ ACTIVE - Good volume</div>
+                ) : (((trading?.volume24h || 0) / (market?.marketCap || 1))) > 0.1 ? (
+                  <div className="vol-badge moderate">📊 MODERATE - Average activity</div>
+                ) : (
+                  <div className="vol-badge low">😴 LOW - Limited activity</div>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Holder Concentration */}
+          {holders && (
+            <div className="detail-card">
+              <h2>📊 Holder Concentration</h2>
+              <div className="concentration-stats">
+                <div className="concentration-item">
+                  <div className="concentration-bar">
+                    <div className="concentration-fill" style={{ width: '80%', background: 'linear-gradient(90deg, #10b981, #34d399)' }}></div>
+                  </div>
+                  <div className="concentration-label">
+                    <span>Top 10 Holders</span>
+                    <span className="concentration-value">~80%</span>
+                  </div>
+                </div>
+                <div className="concentration-item">
+                  <div className="concentration-bar">
+                    <div className="concentration-fill" style={{ width: '95%', background: 'linear-gradient(90deg, #f59e0b, #fbbf24)' }}></div>
+                  </div>
+                  <div className="concentration-label">
+                    <span>Top 50 Holders</span>
+                    <span className="concentration-value">~95%</span>
+                  </div>
+                </div>
+                <div className="concentration-info">
+                  {holders.holders > 1000 ? (
+                    <div className="dist-signal good">✅ Well distributed ({formatNumber(holders.holders)} holders)</div>
+                  ) : holders.holders > 100 ? (
+                    <div className="dist-signal moderate">⚠️ Moderate distribution ({formatNumber(holders.holders)} holders)</div>
+                  ) : (
+                    <div className="dist-signal warning">🚨 Concentrated holdings ({formatNumber(holders.holders)} holders)</div>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Trading Activity Breakdown */}
+          {trading && (
+            <div className="detail-card">
+              <h2>📈 Trading Breakdown</h2>
+              <div className="trading-breakdown">
+                <div className="breakdown-row">
+                  <span className="breakdown-label">🟢 Buy Transactions</span>
+                  <span className="breakdown-value">{formatNumber(trading.buys)}</span>
+                </div>
+                <div className="breakdown-row">
+                  <span className="breakdown-label">🔴 Sell Transactions</span>
+                  <span className="breakdown-value">{formatNumber(trading.sells)}</span>
+                </div>
+                <div className="breakdown-row">
+                  <span className="breakdown-label">💰 Total Volume</span>
+                  <span className="breakdown-value">${formatNumber(trading.volume)}</span>
+                </div>
+                <div className="breakdown-row">
+                  <span className="breakdown-label">⚡ Avg Transaction</span>
+                  <span className="breakdown-value">${formatNumber(trading.volume / (trading.buys + trading.sells))}</span>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div className="content-right">
+          {/* Social Links */}
+          <div className="detail-card">
+            <h2>🌐 Social & Links</h2>
+            <div className="social-links">
+              {social.twitter && (
+                <a href={`https://twitter.com/${social.twitter}`} target="_blank" rel="noopener noreferrer" className="social-link">
+                  🐦 Twitter: @{social.twitter}
+                </a>
+              )}
+              {social.telegram && (
+                <a href={social.telegram} target="_blank" rel="noopener noreferrer" className="social-link">
+                  ✈️ Telegram
+                </a>
+              )}
+              {social.website && (
+                <a href={social.website} target="_blank" rel="noopener noreferrer" className="social-link">
+                  🌍 Website
+                </a>
+              )}
+              {social.discord && (
+                <a href={social.discord} target="_blank" rel="noopener noreferrer" className="social-link">
+                  💬 Discord
+                </a>
+              )}
+              {!social.twitter && !social.telegram && !social.website && (
+                <div className="no-socials">No social links available</div>
+              )}
+            </div>
+          </div>
+
+          {/* Token Info */}
+          <div className="detail-card">
+            <h2>ℹ️ Token Information</h2>
+            <div className="token-info">
+              <div className="info-row">
+                <span>Launch Platform</span>
+                <span className="info-value">{safety.launchpad}</span>
+              </div>
+              <div className="info-row">
+                <span>DEX</span>
+                <span className="info-value">{dex.name}</span>
+              </div>
+              {basic.createdAt && (
+                <div className="info-row">
+                  <span>Created</span>
+                  <span className="info-value">
+                    {new Date(basic.createdAt * 1000).toLocaleDateString()}
+                  </span>
+                </div>
+              )}
+              {basic.deployer && (
+                <div className="info-row">
+                  <span>Deployer</span>
+                  <span className="info-value mono">
+                    {basic.deployer.substring(0, 8)}...
+                    <button onClick={() => copyToClipboard(basic.deployer)} className="copy-btn-small">📋</button>
+                  </span>
+                </div>
+              )}
+              <div className="info-row">
+                <span>Verified</span>
+                <span className="info-value">{safety.isVerified ? '✅ Yes' : '⚠️ No'}</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Data Sources */}
+          <div className="detail-card">
+            <h2>📡 Data Sources</h2>
+            <div className="data-sources">
+              <div className={`source-item ${sources.moby ? 'active' : ''}`}>
+                {sources.moby ? '✅' : '❌'} Moby API
+              </div>
+              <div className={`source-item ${sources.dexscreener ? 'active' : ''}`}>
+                {sources.dexscreener ? '✅' : '❌'} DexScreener
+              </div>
+              <div className={`source-item ${sources.geckoterminal ? 'active' : ''}`}>
+                {sources.geckoterminal ? '✅' : '❌'} GeckoTerminal
+              </div>
+              <div className={`source-item ${sources.pumpfun ? 'active' : ''}`}>
+                {sources.pumpfun ? '✅' : '❌'} Pump.fun
+              </div>
+              <div className={`source-item ${sources.gmgn ? 'active' : ''}`}>
+                {sources.gmgn ? '✅' : '❌'} GMGN.ai
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export default TokenDetail;
